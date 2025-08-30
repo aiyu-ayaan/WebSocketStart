@@ -4,10 +4,16 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.serialization.Serializable
 
+@Serializable
+enum class Role {
+    USER,
+    AI
+}
 
 @Serializable
 data class Message(
     val message: String,
+    val role: Role = Role.USER,
     val time: Long = System.currentTimeMillis()
 )
 
@@ -15,8 +21,8 @@ class LocalDb private constructor() {
     private var _messages: MutableStateFlow<List<Message>> = MutableStateFlow<List<Message>>(emptyList())
     val message: Flow<List<Message>> = _messages
 
-    fun addMessage(message: String) {
-        _messages.value += Message(message)
+    fun addMessage(message: Message) {
+        _messages.value += message
     }
 
     fun updateMessage(oldMessage: String, newMessage: String) {

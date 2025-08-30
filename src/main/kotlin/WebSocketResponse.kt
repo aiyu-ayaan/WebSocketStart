@@ -3,9 +3,16 @@ package com.aiyu
 import kotlinx.serialization.Serializable
 
 
+enum class Commands(
+) {
+    MESSAGE,
+    OBSERVE,
+    STOP,
+}
+
 @Serializable
 enum class WebSocketEvents {
-    INITIAL, UPDATED, DISCONNECTED
+    INITIAL,LOADING, UPDATED, DISCONNECTED
 }
 
 @Serializable

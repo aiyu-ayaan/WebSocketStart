@@ -12,47 +12,57 @@ class ConnectionManager(
     private val json = Json { ignoreUnknownKeys = true }
     private val connections = ConcurrentHashMap<String, WebSocketSession>()
     private val userWatchJobs = ConcurrentHashMap<String, Job>()
+    private val isObserving = ConcurrentHashMap<String, Boolean>()
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     suspend fun addConnection(
-        userId: String,
-        session: WebSocketSession
+        userName: String, session: WebSocketSession
     ) {
-        connections[userId] = session
-        println("User $userId connected. Total connections: ${connections.size}")
+        connections[userName] = session
+        println("User $userName connected. Total connections: ${connections.size}")
         session.send(
             Frame.Text(
                 json.encodeToString(
                     WebSocketResponse(
                         event = WebSocketEvents.INITIAL,
                         data = emptyList<Message>(),
-                        message = "Welcome! Connected to WebSocket. ${connections.size} users online."
+                        message = "Welcome $userName! Connected to WebSocket. ${connections.size} users online."
                     )
                 )
             )
         )
-        observeMessages(userId)
     }
 
-    fun observeMessages(userId: String) {
-        if (userWatchJobs.containsKey(userId)) return // Already observing
+    fun updateObservingStatus(userId: String, observing: Boolean) {
+        isObserving[userId] = observing
+        if (observing) {
+            scope.launch {
+                observeMessages(userId)
+            }
+        } else {
+            userWatchJobs[userId]?.cancel()
+            userWatchJobs.remove(userId)
+            isObserving.remove(userId)  // Clean up observing status
+        }
+    }
+
+    private fun observeMessages(userId: String) {
+        if (userWatchJobs.containsKey(userId)) return
 
         val job = scope.launch {
-            localDb.message
-                .flowOn(Dispatchers.IO)
-                .collect { messages ->
-                    connections[userId]?.send(
-                        Frame.Text(
-                            json.encodeToString(
-                                WebSocketResponse(
-                                    event = WebSocketEvents.UPDATED,
-                                    data = messages,
-                                    message = "Messages updated. Total messages: ${messages.size}"
-                                )
+            localDb.message.flowOn(Dispatchers.IO).collect { messages ->
+                connections[userId]?.send(
+                    Frame.Text(
+                        json.encodeToString(
+                            WebSocketResponse(
+                                event = WebSocketEvents.UPDATED,
+                                data = messages,
+                                message = "Messages updated. Total messages: ${messages.size}"
                             )
                         )
                     )
-                }
+                )
+            }
         }
         userWatchJobs[userId] = job
     }
