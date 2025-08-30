@@ -1,17 +1,10 @@
 package com.aiyu
 
-import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.application.*
-import io.ktor.server.plugins.calllogging.*
-import io.ktor.server.plugins.contentnegotiation.*
-import io.ktor.server.request.*
-import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import io.ktor.server.websocket.*
 import io.ktor.websocket.*
-import java.time.Duration
 import kotlin.time.Duration.Companion.seconds
-import org.slf4j.event.*
 
 fun Application.configureSockets() {
     install(WebSockets) {
@@ -20,16 +13,34 @@ fun Application.configureSockets() {
         maxFrameSize = Long.MAX_VALUE
         masking = false
     }
+    val localDb = LocalDb.getInstance()
+    val connectionManager = ConnectionManager(localDb)
     routing {
-        webSocket("/ws") { // websocketSession
-            for (frame in incoming) {
-                if (frame is Frame.Text) {
-                    val text = frame.readText()
-                    outgoing.send(Frame.Text("YOU SAID: $text"))
-                    if (text.equals("bye", ignoreCase = true)) {
-                        close(CloseReason(CloseReason.Codes.NORMAL, "Client said BYE"))
+        webSocket("/ws/chat") {
+            val userId = call.request.queryParameters["userId"]
+            if (userId.isNullOrBlank()) {
+                close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "No userId provided"))
+                return@webSocket
+            }
+            connectionManager.addConnection(userId, this)
+            try {
+                for (frame in incoming) {
+                    if (frame is Frame.Text) {
+                        val text = frame.readText()
+                        localDb.addMessage("User $userId says: $text")
+                        send("Message send acknowledged")
                     }
                 }
+            } catch (e: Exception) {
+                close(
+                    CloseReason(
+                        CloseReason.Codes.INTERNAL_ERROR,
+                        "Error: ${e.localizedMessage}"
+                    )
+                )
+            } finally {
+                ConnectionManager(localDb).removeConnection(userId)
+                println("Connection closed for user $userId")
             }
         }
     }
